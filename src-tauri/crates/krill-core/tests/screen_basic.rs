@@ -31,7 +31,9 @@ fn scroll_keeps_last_rows() {
             break;
         }
     }
-    // After scrolling, the last full row must be "789".
-    let lines: Vec<&str> = s.text().lines().collect();
-    assert_eq!(lines[0], "789");
+    // After scrolling, "123" has left the screen; rows are "456" / "789".
+    let text = s.text();
+    let lines: Vec<&str> = text.lines().collect();
+    assert_eq!(lines.first(), Some(&"456"));
+    assert_eq!(lines.get(1), Some(&"789"));
 }

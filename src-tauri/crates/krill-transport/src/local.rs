@@ -7,6 +7,10 @@ pub struct LocalShell;
 
 impl Transport for LocalShell {
     fn write(&mut self, _data: &[u8]) -> Result<usize, TransportError> {
-        Err(std::io::Error::new(std::io::ErrorKind::Unsupported, "ConPTY backend not wired yet").into())
+        Err(std::io::Error::new(
+            std::io::ErrorKind::Unsupported,
+            "ConPTY backend not wired yet",
+        )
+        .into())
     }
 }

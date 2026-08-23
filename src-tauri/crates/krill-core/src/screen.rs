@@ -10,7 +10,12 @@ pub struct Cell {
 
 impl Default for Cell {
     fn default() -> Self {
-        Self { ch: ' ', fg: None, bg: None, bold: false }
+        Self {
+            ch: ' ',
+            fg: None,
+            bg: None,
+            bold: false,
+        }
     }
 }
 
@@ -56,9 +61,12 @@ impl Screen {
             self.cursor_col = 0;
             self.line_feed();
         }
-        let idx = usize::from(self.cursor_row) * usize::from(self.cols)
-            + usize::from(self.cursor_col);
-        self.grid[idx] = Cell { ch, ..Cell::default() };
+        let idx =
+            usize::from(self.cursor_row) * usize::from(self.cols) + usize::from(self.cursor_col);
+        self.grid[idx] = Cell {
+            ch,
+            ..Cell::default()
+        };
         self.cursor_col += 1;
     }
 

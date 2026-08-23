@@ -15,12 +15,13 @@ impl vte::Perform for Sink {
         }
     }
 }
-impl vte::AnsiHandler for Sink {}
 
 #[test]
 fn parser_passes_plain_text_through() {
     let mut p = VtParser::new(ParserConfig::default());
-    let mut sink = Sink { printed: String::new() };
+    let mut sink = Sink {
+        printed: String::new(),
+    };
     p.advance(b"hello world", &mut sink);
     assert_eq!(sink.printed, "hello world");
 }
@@ -28,7 +29,9 @@ fn parser_passes_plain_text_through() {
 #[test]
 fn parser_strips_sgr_sequences() {
     let mut p = VtParser::new(ParserConfig::default());
-    let mut sink = Sink { printed: String::new() };
+    let mut sink = Sink {
+        printed: String::new(),
+    };
     // red bold text then reset
     p.advance(b"\x1b[1;31mOK\x1b[0m", &mut sink);
     assert_eq!(sink.printed, "OK");
