@@ -1,0 +1,16 @@
+[package]
+name = "krill-session"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+description = "Session pump: drives a Transport through the VT parser into the Screen"
+
+[dependencies]
+tokio = { version = "1", features = ["full"] }
+thiserror = "2"
+tracing = "0.1"
+krill-core = { path = "../krill-core" }
+krill-vt = { path = "../krill-vt" }
+krill-transport = { path = "../krill-transport" }
+
+[dev-dependencies]
