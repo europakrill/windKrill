@@ -78,6 +78,24 @@ impl TermPerformer {
             'K' => self.screen.erase_line(first(0)),
             '@' => self.screen.insert_blanks(first(1)),
             'P' => self.screen.delete_chars(first(1)),
+            // DECSTBM: set scroll region; per spec the cursor homes after.
+            'r' => {
+                let mut it = params.iter();
+                let top = it.next().and_then(|p| p.first().copied()).unwrap_or(1);
+                let bottom = it.next().and_then(|p| p.first().copied()).unwrap_or(0);
+                let bottom = if bottom == 0 {
+                    24_000
+                } else {
+                    i64::from(bottom)
+                };
+                self.screen.set_scroll_region(i64::from(top), bottom);
+                self.screen.goto(0, 0);
+            }
+            // SU / SD: scroll region contents without moving the cursor.
+            'S' => self.screen.scroll_up(first(1).max(1) as u16),
+            'T' => self.screen.scroll_down(first(1).max(1) as u16),
+            // RI is ESC M (handled in esc_dispatch), not CSI.
+            'M' => {}
             'd' => {
                 let row = first(1);
                 self.screen.goto(row - 1, i64::from(self.screen.cursor().0));
@@ -131,8 +149,23 @@ impl Perform for TermPerformer {
         self.handle_csi(params, intermediates, action);
     }
 
-    fn esc_dispatch(&mut self, _intermediates: &[u8], _ignore: bool, _byte: u8) {
+    fn esc_dispatch(&mut self, intermediates: &[u8], _ignore: bool, byte: u8) {
         self.flush_printed();
-        // RIS (c), DECSC/DECRC (7/8) land with M1 polish.
+        match (intermediates.first(), byte) {
+            // DECSC / DECRC.
+            (None, b'7') => self.screen.save_cursor(),
+            (None, b'8') => self.screen.restore_cursor(),
+            // RI: reverse index — scroll down at the region top.
+            (None, b'M') => self.screen.reverse_index(),
+            // IND/NEL could land here later; RIS resets everything.
+            // RIS: full reset — clear, home, drop region & alt screen.
+            (None, b'c') => {
+                let cols = self.screen.cols();
+                let rows = self.screen.rows();
+                let cap = 10_000;
+                self.screen = Screen::with_scrollback_cap(cols, rows, cap);
+            }
+            _ => {}
+        }
     }
 }

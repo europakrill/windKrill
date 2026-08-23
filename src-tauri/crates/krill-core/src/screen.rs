@@ -35,7 +35,7 @@ impl Default for Cell {
 }
 
 /// Tracked DEC private modes (CSI ? n h/l).
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Modes {
     pub mouse_normal: bool,
     pub mouse_button: bool,
@@ -44,6 +44,24 @@ pub struct Modes {
     pub mouse_sgr: bool,
     /// Bracketed paste (mode 2004).
     pub bracketed_paste: bool,
+    /// Alternate screen buffer active (modes 47/1047/1049).
+    pub alt_screen: bool,
+    /// Auto-wrap (DECAWM, mode 7). On by default.
+    pub autowrap: bool,
+}
+
+impl Default for Modes {
+    fn default() -> Self {
+        Self {
+            mouse_normal: false,
+            mouse_button: false,
+            mouse_any: false,
+            mouse_sgr: false,
+            bracketed_paste: false,
+            alt_screen: false,
+            autowrap: true,
+        }
+    }
 }
 
 /// Screen grid model with scrollback.
@@ -61,6 +79,12 @@ pub struct Screen {
     cursor_col: u16,
     attrs: Attrs,
     modes: Modes,
+    /// DECSTBM scroll region, 0-based inclusive (top, bottom). `None` = full screen.
+    scroll_region: Option<(u16, u16)>,
+    /// Alternate-screen buffer (kept while the primary is active).
+    alt_grid: Option<Vec<Cell>>,
+    /// Saved cursor for DECSC (ESC 7) / DECRC (ESC 8), and for 1049 save.
+    saved_cursor: Option<(u16, u16, Attrs)>,
 }
 
 impl Screen {
@@ -79,6 +103,9 @@ impl Screen {
             cursor_col: 0,
             attrs: Attrs::default(),
             modes: Modes::default(),
+            scroll_region: None,
+            alt_grid: None,
+            saved_cursor: None,
         }
     }
 
@@ -120,9 +147,13 @@ impl Screen {
 
     /// Write a char at the cursor, advancing it. Wraps at the right margin (DECAWM).
     pub fn put(&mut self, ch: char) {
-        if self.cursor_col >= self.cols {
+        // DECAWM off: the last column is overwritten in place.
+        if self.cursor_col >= self.cols && self.modes.autowrap {
             self.cursor_col = 0;
             self.line_feed();
+        }
+        if self.cursor_col >= self.cols {
+            self.cursor_col = self.cols - 1;
         }
         let idx = self.idx(self.cursor_row, self.cursor_col);
         self.grid[idx] = Cell {
@@ -133,11 +164,25 @@ impl Screen {
     }
 
     /// Line feed; scrolls (pushing into scrollback) at the bottom margin.
+    ///
+    /// Inside a DECSTBM region only the region scrolls and no scrollback
+    /// entry is produced (region scrolling is application-driven, like vim).
     pub fn line_feed(&mut self) {
-        self.cursor_row += 1;
-        if self.cursor_row >= self.rows {
-            self.cursor_row = self.rows - 1;
-            self.scroll_up();
+        let bottom = self.scroll_bottom();
+        if self.cursor_row == bottom {
+            self.scroll_up(1);
+        } else if self.cursor_row < self.rows - 1 {
+            self.cursor_row += 1;
+        }
+    }
+
+    /// Reverse index (ESC M / CSI L context): feed up; scrolls down at the top.
+    pub fn reverse_index(&mut self) {
+        let top = self.scroll_top();
+        if self.cursor_row == top {
+            self.scroll_down(1);
+        } else {
+            self.cursor_row -= 1;
         }
     }
 
@@ -156,9 +201,83 @@ impl Screen {
     }
 
     /// Absolute cursor position, 0-based, clamped to the grid.
+    ///
+    /// While a scroll region is set (DECSTBM), CUP with DECOM-style origin
+    /// is NOT implied here; plain CUP stays screen-absolute per xterm.
     pub fn goto(&mut self, row: i64, col: i64) {
         self.cursor_row = clamp_idx(row, self.rows);
         self.cursor_col = clamp_idx(col, self.cols);
+    }
+
+    /// Set the DECSTBM scroll region (1-based inclusive params, as received).
+    /// Requires top < bottom; otherwise the request is ignored (per spec).
+    pub fn set_scroll_region(&mut self, top: i64, bottom: i64) {
+        let top = top.clamp(1, i64::from(self.rows)) - 1;
+        let bottom = bottom.clamp(1, i64::from(self.rows)) - 1;
+        if top < bottom {
+            self.scroll_region = Some((top as u16, bottom as u16));
+        }
+    }
+
+    /// Reset the scroll region to the full screen.
+    pub fn reset_scroll_region(&mut self) {
+        self.scroll_region = None;
+    }
+
+    /// Switch to the alternate screen buffer.
+    ///
+    /// `save_cursor`: modes 1049/1048 also remember the cursor position
+    /// (and rendition) for restoration on return; bare 47/1047 do not.
+    pub fn enter_alt_screen(&mut self, save_cursor: bool) {
+        if self.modes.alt_screen {
+            return;
+        }
+        if save_cursor {
+            self.saved_cursor = Some((self.cursor_row, self.cursor_col, self.attrs));
+        }
+        let blank = Cell::default();
+        let grid = std::mem::replace(
+            &mut self.grid,
+            vec![blank; usize::from(self.cols) * usize::from(self.rows)],
+        );
+        self.alt_grid = Some(grid);
+        self.modes.alt_screen = true;
+    }
+
+    /// Return to the primary screen buffer.
+    pub fn exit_alt_screen(&mut self, restore_cursor: bool) {
+        if !self.modes.alt_screen {
+            return;
+        }
+        if let Some(grid) = self.alt_grid.take() {
+            self.grid = grid;
+        }
+        self.modes.alt_screen = false;
+        if restore_cursor {
+            if let Some((r, c, attrs)) = self.saved_cursor.take() {
+                self.cursor_row = r.min(self.rows - 1);
+                self.cursor_col = c.min(self.cols - 1);
+                self.attrs = attrs;
+                return;
+            }
+        }
+        // xterm clears the alt screen on entry and homes the cursor on both edges.
+        self.erase_display(2);
+        self.goto(0, 0);
+    }
+
+    /// Save cursor + rendition (DECSC, ESC 7).
+    pub fn save_cursor(&mut self) {
+        self.saved_cursor = Some((self.cursor_row, self.cursor_col, self.attrs));
+    }
+
+    /// Restore cursor + rendition (DECRC, ESC 8); no-op if never saved.
+    pub fn restore_cursor(&mut self) {
+        if let Some((r, c, attrs)) = self.saved_cursor.take() {
+            self.cursor_row = r.min(self.rows - 1);
+            self.cursor_col = c.min(self.cols - 1);
+            self.attrs = attrs;
+        }
     }
 
     /// Relative cursor movement, clamped to the grid.
@@ -281,6 +400,37 @@ impl Screen {
     /// DEC private mode set/reset. `set = true` for `h`, `false` for `l`.
     pub fn set_private_mode(&mut self, mode: i64, set: bool) {
         match mode {
+            7 => self.modes.autowrap = set,
+            47 => {
+                if set {
+                    self.enter_alt_screen(false);
+                } else {
+                    self.exit_alt_screen(false);
+                }
+            }
+            1047 => {
+                if set {
+                    self.enter_alt_screen(false);
+                } else {
+                    self.exit_alt_screen(false);
+                }
+            }
+            // 1048 = save/restore cursor only (no buffer swap).
+            1048 => {
+                if set {
+                    self.save_cursor();
+                } else {
+                    self.restore_cursor();
+                }
+            }
+            1049 => {
+                if set {
+                    self.save_cursor();
+                    self.enter_alt_screen(false);
+                } else {
+                    self.exit_alt_screen(true);
+                }
+            }
             9 | 1000 => self.modes.mouse_normal = set,
             1002 => self.modes.mouse_button = set,
             1003 => self.modes.mouse_any = set,
@@ -362,17 +512,58 @@ impl Screen {
         usize::from(row) * usize::from(self.cols) + usize::from(col)
     }
 
-    fn scroll_up(&mut self) {
-        let top: Vec<Cell> = self.grid[..usize::from(self.cols)].to_vec();
-        self.scrollback.push_back(top);
-        while self.scrollback.len() > self.scrollback_cap {
-            self.scrollback.pop_front();
+    fn scroll_top(&self) -> u16 {
+        self.scroll_region.map_or(0, |(top, _)| top)
+    }
+
+    fn scroll_bottom(&self) -> u16 {
+        self.scroll_region
+            .map_or(self.rows - 1, |(_, bottom)| bottom)
+    }
+
+    /// Scroll `n` lines up inside the DECSTBM region. The line leaving the
+    /// region enters scrollback only when the region is the full screen.
+    pub fn scroll_up(&mut self, n: u16) {
+        let (top, bottom) = (self.scroll_top(), self.scroll_bottom());
+        let width = usize::from(self.cols);
+        let n = n.min(bottom - top) as usize;
+        if n == 0 {
+            return;
         }
-        self.grid.drain(..usize::from(self.cols));
-        self.grid.resize(
-            usize::from(self.cols) * usize::from(self.rows),
-            Cell::default(),
-        );
+        // Full-screen scroll: the topmost lines go to scrollback —
+        // except on the alternate screen, which has no scrollback.
+        if top == 0 && bottom == self.rows - 1 && !self.modes.alt_screen {
+            for i in 0..n {
+                let start = i * width;
+                let line = self.grid[start..start + width].to_vec();
+                self.scrollback.push_back(line);
+            }
+            while self.scrollback.len() > self.scrollback_cap {
+                self.scrollback.pop_front();
+            }
+        }
+        for _ in 0..n {
+            let base = usize::from(top) * width;
+            let end = (usize::from(bottom) + 1) * width;
+            self.grid.drain(base..base + width);
+            self.grid
+                .splice(end - width..end - width, vec![Cell::default(); width]);
+        }
+    }
+
+    /// Scroll `n` lines down inside the DECSTBM region.
+    pub fn scroll_down(&mut self, n: u16) {
+        let (top, bottom) = (self.scroll_top(), self.scroll_bottom());
+        let width = usize::from(self.cols);
+        let n = n.min(bottom - top) as usize;
+        for _ in 0..n {
+            let base = usize::from(top) * width;
+            let end = (usize::from(bottom) + 1) * width;
+            self.grid
+                .splice(end - width..end, vec![Cell::default(); width]);
+            self.grid.drain(end - width..end);
+            self.grid.splice(base..base, vec![Cell::default(); width]);
+        }
     }
 }
 
