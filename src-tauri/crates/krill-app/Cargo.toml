@@ -5,6 +5,10 @@ edition = "2021"
 license = "Apache-2.0"
 description = "Tauri application layer: commands bridging GUI frontend to the krill engine"
 
+[[bin]]
+name = "windkrill"
+path = "src/main.rs"
+
 [lib]
 name = "krill_app_lib"
 path = "src/lib.rs"
