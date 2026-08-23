@@ -1,8 +1,9 @@
-//! krill-transport: session transport layer.
+//! Session transport layer.
 //!
-//! M0 scope: trait definitions only. ConPTY implementation lands with
-//! the first Windows milestone build.
+//! M2 scope: async byte-stream abstraction over ConPTY (Windows) and a
+//! portable fallback. SSH/Telnet/Serial implement the same trait later.
 
+use std::future::Future;
 use thiserror::Error;
 
 pub mod local;
@@ -16,8 +17,21 @@ pub enum TransportError {
 }
 
 /// A bidirectional byte transport to a session (local PTY, SSH channel, ...).
-pub trait Transport {
+///
+/// The read side is exposed as an `AsyncRead`-like poll so the terminal
+/// engine can be driven from one tokio task per session.
+pub trait Transport: Send {
     /// Write user input to the session.
-    fn write(&mut self, data: &[u8]) -> Result<usize, TransportError>;
-    // M0+: async read side lands with the ConPTY implementation.
+    fn write(&mut self, data: &[u8]) -> impl Future<Output = Result<usize, TransportError>> + Send;
+    /// Read raw output bytes from the session.
+    fn read(
+        &mut self,
+        buf: &mut [u8],
+    ) -> impl Future<Output = Result<usize, TransportError>> + Send;
+    /// Resize the pseudo terminal (no-op for socket-based transports).
+    fn resize(
+        &mut self,
+        cols: u16,
+        rows: u16,
+    ) -> impl Future<Output = Result<(), TransportError>> + Send;
 }
