@@ -1737,7 +1737,6 @@ name = "krill-core"
 version = "0.1.0"
 dependencies = [
  "insta",
- "krill-vt",
 ]
 
 [[package]]
@@ -1753,6 +1752,7 @@ name = "krill-vt"
 version = "0.1.0"
 dependencies = [
  "insta",
+ "krill-core",
  "vte",
 ]
 

@@ -1,9 +1,11 @@
 //! krill-vt: VT/xterm parser frontend.
 //!
-//! M0 scope: wrap the `vte` crate behind a stable API that feeds
-//! parsed cell/attribute events into krill-core's screen model.
-//! Acceptance: vttest-style golden replay tests pass (M1).
+//! Wraps the `vte` crate behind a stable API and provides `TermPerformer`,
+//! the `vte::Perform` implementation that translates parser events into
+//! krill-core `Screen` mutations.
 
 pub mod parser;
+pub mod performer;
 
 pub use parser::{ParserConfig, VtParser};
+pub use performer::TermPerformer;

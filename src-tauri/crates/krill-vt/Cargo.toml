@@ -6,6 +6,7 @@ license = "Apache-2.0"
 description = "VT/xterm parser frontend (ANSI/ECMA-48, 256c, truecolor, mouse protocol) feeding krill-core"
 
 [dependencies]
+krill-core = { path = "../krill-core" }
 vte = "0.13"
 
 [dev-dependencies]
