@@ -1,0 +1,12 @@
+[package]
+name = "krill-vt"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+description = "VT/xterm parser frontend (ANSI/ECMA-48, 256c, truecolor, mouse protocol) feeding krill-core"
+
+[dependencies]
+vte = "0.13"
+
+[dev-dependencies]
+insta = "1"

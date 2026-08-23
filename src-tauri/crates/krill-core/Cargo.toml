@@ -1,0 +1,12 @@
+[package]
+name = "krill-core"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+description = "windKrill terminal screen buffer core: grid, logical blocks, folding, timestamps, scrollback with memory compression"
+
+[dependencies]
+krill-vt = { path = "../krill-vt" }
+
+[dev-dependencies]
+insta = "1"

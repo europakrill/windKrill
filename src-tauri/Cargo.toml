@@ -1,0 +1,13 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/krill-vt",
+    "crates/krill-core",
+    "crates/krill-transport",
+    "crates/krill-app",
+]
+
+# M0 note: krill-app depends on the tauri crate; on this Linux dev box we can
+# `cargo check -p krill-vt -p krill-core` without any GUI system deps.
+# Full workspace check requires tauri prerequisites (webkit2gtk etc. on Linux).
+default-members = ["crates/krill-vt", "crates/krill-core", "crates/krill-transport"]

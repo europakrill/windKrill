@@ -1,0 +1,13 @@
+[package]
+name = "krill-transport"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+description = "Session transport layer: ConPTY/local shell, SSH (russh), Telnet, Serial, RawTcp"
+
+[dependencies]
+tokio = { version = "1", features = ["full"] }
+thiserror = "2"
+
+[target.'cfg(windows)'.dependencies]
+# M2: portable-pty / conpty wiring lands here
