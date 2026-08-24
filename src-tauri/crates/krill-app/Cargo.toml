@@ -21,3 +21,6 @@ tokio = { version = "1", features = ["full"] }
 krill-core = { path = "../krill-core" }
 krill-vt = { path = "../krill-vt" }
 krill-transport = { path = "../krill-transport" }
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }

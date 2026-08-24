@@ -11,6 +11,8 @@ pub struct TermPerformer {
     pub screen: Screen,
     /// Pending printable chars, flushed before any control action.
     printed: String,
+    /// Protocol replies (DSR/DA/etc.) that the session must write to transport.
+    responses: Vec<Vec<u8>>,
 }
 
 impl TermPerformer {
@@ -18,6 +20,7 @@ impl TermPerformer {
         Self {
             screen,
             printed: String::new(),
+            responses: Vec::new(),
         }
     }
 
@@ -32,6 +35,11 @@ impl TermPerformer {
     /// character still lands.
     pub fn flush(&mut self) {
         self.flush_printed();
+    }
+
+    /// Drain protocol replies generated while parsing terminal queries.
+    pub fn take_responses(&mut self) -> Vec<Vec<u8>> {
+        std::mem::take(&mut self.responses)
     }
 
     fn handle_csi(&mut self, params: &Params, intermediates: &[u8], action: char) {
@@ -104,6 +112,14 @@ impl TermPerformer {
                 // Flatten all params incl. colon sub-params: 38:2:r:g:b works.
                 let flat: Vec<i64> = params.iter().flatten().map(|&v| i64::from(v)).collect();
                 self.screen.sgr(&flat);
+            }
+            // DSR 6: report the cursor position using one-based coordinates.
+            'n' if private.is_none() && first(0) == 6 => {
+                let (col, row) = self.screen.visible_cursor();
+                self.responses.push(
+                    format!("\x1b[{};{}R", row.saturating_add(1), col.saturating_add(1))
+                        .into_bytes(),
+                );
             }
             'h' | 'l' if private == Some(b'?') => {
                 let set = action == 'h';

@@ -64,11 +64,49 @@ impl Default for Modes {
     }
 }
 
+/// Hard allocation limits shared by the screen and local PTY transports.
+/// Four million cells keeps one grid bounded to a predictable amount of RAM
+/// while remaining far above practical terminal viewport sizes.
+pub const MAX_SCREEN_DIMENSION: u16 = 4096;
+pub const MAX_SCREEN_CELLS: usize = 4 * 1024 * 1024;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ScreenSizeError {
+    pub cols: u16,
+    pub rows: u16,
+}
+
+impl std::fmt::Display for ScreenSizeError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            formatter,
+            "invalid terminal size {}x{}; dimensions must be 1..={} and total cells <= {}",
+            self.cols, self.rows, MAX_SCREEN_DIMENSION, MAX_SCREEN_CELLS
+        )
+    }
+}
+
+impl std::error::Error for ScreenSizeError {}
+
+pub fn validate_screen_size(cols: u16, rows: u16) -> Result<(), ScreenSizeError> {
+    let cells = usize::from(cols) * usize::from(rows);
+    if cols == 0
+        || rows == 0
+        || cols > MAX_SCREEN_DIMENSION
+        || rows > MAX_SCREEN_DIMENSION
+        || cells > MAX_SCREEN_CELLS
+    {
+        return Err(ScreenSizeError { cols, rows });
+    }
+    Ok(())
+}
+
 /// Screen grid model with scrollback.
 ///
 /// Owns the grid, cursor, active rendition and scrolled-off history.
 /// Receives parsed semantics either directly (`put`, `goto`, `sgr`, ...)
 /// or via `TermPerformer` (the `vte::Perform` bridge).
+#[derive(Clone)]
 pub struct Screen {
     cols: u16,
     rows: u16,
@@ -89,11 +127,24 @@ pub struct Screen {
 
 impl Screen {
     pub fn new(cols: u16, rows: u16) -> Self {
-        Self::with_scrollback_cap(cols, rows, 10_000)
+        Self::try_new(cols, rows).expect("screen dimensions must be valid")
+    }
+
+    pub fn try_new(cols: u16, rows: u16) -> Result<Self, ScreenSizeError> {
+        Self::try_with_scrollback_cap(cols, rows, 10_000)
     }
 
     pub fn with_scrollback_cap(cols: u16, rows: u16, cap: usize) -> Self {
-        Self {
+        Self::try_with_scrollback_cap(cols, rows, cap).expect("screen dimensions must be valid")
+    }
+
+    pub fn try_with_scrollback_cap(
+        cols: u16,
+        rows: u16,
+        cap: usize,
+    ) -> Result<Self, ScreenSizeError> {
+        validate_screen_size(cols, rows)?;
+        Ok(Self {
             cols,
             rows,
             grid: vec![Cell::default(); usize::from(cols) * usize::from(rows)],
@@ -106,7 +157,7 @@ impl Screen {
             scroll_region: None,
             alt_grid: None,
             saved_cursor: None,
-        }
+        })
     }
 
     pub fn cols(&self) -> u16 {
@@ -117,8 +168,72 @@ impl Screen {
         self.rows
     }
 
+    /// Resize the visible and inactive alternate grids, preserving the
+    /// top-left overlap. Full xterm-style reflow is intentionally deferred.
+    pub fn resize(&mut self, cols: u16, rows: u16) -> Result<(), ScreenSizeError> {
+        validate_screen_size(cols, rows)?;
+        if cols == self.cols && rows == self.rows {
+            return Ok(());
+        }
+
+        fn resized_grid(
+            source: &[Cell],
+            old_cols: u16,
+            old_rows: u16,
+            new_cols: u16,
+            new_rows: u16,
+        ) -> Vec<Cell> {
+            let mut target = vec![Cell::default(); usize::from(new_cols) * usize::from(new_rows)];
+            let copy_rows = old_rows.min(new_rows);
+            let copy_cols = old_cols.min(new_cols);
+            for row in 0..copy_rows {
+                let old_start = usize::from(row) * usize::from(old_cols);
+                let new_start = usize::from(row) * usize::from(new_cols);
+                target[new_start..new_start + usize::from(copy_cols)]
+                    .copy_from_slice(&source[old_start..old_start + usize::from(copy_cols)]);
+            }
+            target
+        }
+
+        let old_cols = self.cols;
+        let cursor_was_wrap_pending = self.cursor_col >= old_cols;
+        let saved_cursor = self.saved_cursor;
+        self.grid = resized_grid(&self.grid, self.cols, self.rows, cols, rows);
+        if let Some(alt) = self.alt_grid.take() {
+            self.alt_grid = Some(resized_grid(&alt, self.cols, self.rows, cols, rows));
+        }
+        self.cols = cols;
+        self.rows = rows;
+        self.cursor_col = if cursor_was_wrap_pending {
+            old_cols.saturating_sub(1).min(cols - 1)
+        } else {
+            self.cursor_col.min(cols - 1)
+        };
+        self.cursor_row = self.cursor_row.min(rows - 1);
+        if let Some((row, col, attrs)) = saved_cursor {
+            let col = if col >= old_cols {
+                old_cols.saturating_sub(1).min(cols - 1)
+            } else {
+                col.min(cols - 1)
+            };
+            self.saved_cursor = Some((row.min(rows - 1), col, attrs));
+        }
+        self.scroll_region = None;
+        Ok(())
+    }
+
     pub fn cursor(&self) -> (u16, u16) {
         (self.cursor_col, self.cursor_row)
+    }
+
+    /// Cursor position clamped to an addressable cell. Internally
+    /// `cursor_col == cols` represents delayed auto-wrap after writing the
+    /// right margin; terminal reports must not expose that sentinel.
+    pub fn visible_cursor(&self) -> (u16, u16) {
+        (
+            self.cursor_col.min(self.cols - 1),
+            self.cursor_row.min(self.rows - 1),
+        )
     }
 
     pub fn attrs(&self) -> &Attrs {

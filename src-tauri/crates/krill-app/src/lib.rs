@@ -1,8 +1,8 @@
-//! Tauri app library: registers commands that bridge the frontend to
-//! the krill engine. M0 stub so the desktop shell can build.
+//! Tauri application shell.
 
-/// Launch the desktop app. Real window/IPC setup lands in the first
-/// Windows milestone build.
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    println!("windKrill engine bootstrap placeholder");
+    tauri::Builder::default()
+        .run(tauri::generate_context!())
+        .expect("failed to run windKrill Tauri application");
 }

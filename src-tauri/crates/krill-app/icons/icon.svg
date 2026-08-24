@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="windKrill placeholder icon">
+  <rect x="8" y="8" width="240" height="240" rx="52" fill="#07101f"/>
+  <path d="M82 58v140M91 128l80-72M91 128l80 72" fill="none" stroke="#3cd3e7" stroke-width="25" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="190" cy="62" r="15" fill="#7c5cff"/>
+</svg>

@@ -7,4 +7,7 @@
 
 pub mod screen;
 
-pub use screen::{Attrs, Cell, Color, Modes, Screen};
+pub use screen::{
+    validate_screen_size, Attrs, Cell, Color, Modes, Screen, ScreenSizeError, MAX_SCREEN_CELLS,
+    MAX_SCREEN_DIMENSION,
+};

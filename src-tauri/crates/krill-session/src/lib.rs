@@ -5,6 +5,9 @@ use krill_core::Screen;
 use krill_transport::{Transport, TransportError};
 use krill_vt::{ParserConfig, TermPerformer, VtParser};
 
+pub mod actor;
+pub use actor::{spawn_session, SessionHandle, SessionStatus};
+
 /// Read chunk size for one pump iteration.
 const READ_BUF: usize = 16 * 1024;
 
@@ -32,6 +35,15 @@ impl<T: Transport> Session<T> {
         if n > 0 {
             self.parser.advance(&self.buf[..n], &mut self.performer);
             self.performer.flush();
+            for response in self.performer.take_responses() {
+                let written = self.transport.write(&response).await?;
+                if written != response.len() {
+                    return Err(TransportError::Backend(format!(
+                        "short terminal response write: {written}/{} bytes",
+                        response.len()
+                    )));
+                }
+            }
         }
         Ok(n)
     }
@@ -43,8 +55,12 @@ impl<T: Transport> Session<T> {
 
     /// Notify the PTY of a viewport resize.
     pub async fn resize(&mut self, cols: u16, rows: u16) -> Result<(), TransportError> {
-        // M3: reflow the screen grid here; for now the PTY side only.
-        self.transport.resize(cols, rows).await
+        krill_core::validate_screen_size(cols, rows)
+            .map_err(|error| TransportError::Backend(error.to_string()))?;
+        self.transport.resize(cols, rows).await?;
+        // Transport already validated the size; resize cannot fail here.
+        let _ = self.performer.screen.resize(cols, rows);
+        Ok(())
     }
 
     pub fn screen(&self) -> &Screen {

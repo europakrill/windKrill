@@ -5,8 +5,12 @@
 //! shared spawn options and provides a loopback test double so the engine
 //! pipeline is exercisable on any platform.
 
-use crate::{Transport, TransportError};
-use std::future::Future;
+use crate::{BoxFuture, Transport, TransportError};
+use krill_core::validate_screen_size;
+use std::sync::Mutex;
+
+#[cfg(windows)]
+pub use crate::conpty::ConPtyTransport;
 
 /// How to spawn the shell inside the PTY.
 #[derive(Debug, Clone)]
@@ -38,6 +42,10 @@ impl Default for SpawnOptions {
 /// In-memory loopback transport used by tests on every platform:
 /// `write` echoes input back as output.
 pub struct LoopbackTransport {
+    state: Mutex<LoopbackState>,
+}
+
+struct LoopbackState {
     pending: std::collections::VecDeque<u8>,
     cols: u16,
     rows: u16,
@@ -45,42 +53,47 @@ pub struct LoopbackTransport {
 
 impl LoopbackTransport {
     pub fn new(opts: &SpawnOptions) -> Self {
+        validate_screen_size(opts.initial_cols, opts.initial_rows)
+            .expect("loopback dimensions must be valid");
         Self {
-            pending: std::collections::VecDeque::new(),
-            cols: opts.initial_cols,
-            rows: opts.initial_rows,
+            state: Mutex::new(LoopbackState {
+                pending: std::collections::VecDeque::new(),
+                cols: opts.initial_cols,
+                rows: opts.initial_rows,
+            }),
         }
     }
 
     pub fn size(&self) -> (u16, u16) {
-        (self.cols, self.rows)
+        let state = self.state.lock().expect("loopback state poisoned");
+        (state.cols, state.rows)
     }
 }
 
 impl Transport for LoopbackTransport {
-    fn write(&mut self, data: &[u8]) -> impl Future<Output = Result<usize, TransportError>> + Send {
-        self.pending.extend(data.iter().copied());
-        std::future::ready(Ok(data.len()))
+    fn write<'a>(&'a self, data: &'a [u8]) -> BoxFuture<'a, Result<usize, TransportError>> {
+        let mut state = self.state.lock().expect("loopback state poisoned");
+        state.pending.extend(data.iter().copied());
+        Box::pin(std::future::ready(Ok(data.len())))
     }
 
-    fn read(
-        &mut self,
-        buf: &mut [u8],
-    ) -> impl Future<Output = Result<usize, TransportError>> + Send {
-        let n = buf.len().min(self.pending.len());
+    fn read<'a>(&'a self, buf: &'a mut [u8]) -> BoxFuture<'a, Result<usize, TransportError>> {
+        let mut state = self.state.lock().expect("loopback state poisoned");
+        let n = buf.len().min(state.pending.len());
         for slot in buf.iter_mut().take(n) {
-            *slot = self.pending.pop_front().unwrap_or(0);
+            *slot = state.pending.pop_front().unwrap_or(0);
         }
-        std::future::ready(Ok(n))
+        Box::pin(std::future::ready(Ok(n)))
     }
 
-    fn resize(
-        &mut self,
-        cols: u16,
-        rows: u16,
-    ) -> impl Future<Output = Result<(), TransportError>> + Send {
-        self.cols = cols;
-        self.rows = rows;
-        std::future::ready(Ok(()))
+    fn resize(&self, cols: u16, rows: u16) -> BoxFuture<'_, Result<(), TransportError>> {
+        let result = validate_screen_size(cols, rows)
+            .map_err(|error| TransportError::Backend(error.to_string()))
+            .map(|()| {
+                let mut state = self.state.lock().expect("loopback state poisoned");
+                state.cols = cols;
+                state.rows = rows;
+            });
+        Box::pin(std::future::ready(result))
     }
 }

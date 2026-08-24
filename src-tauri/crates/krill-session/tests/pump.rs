@@ -30,3 +30,15 @@ async fn empty_pump_is_zero_not_error() {
     let mut session = Session::new(transport, Screen::new(80, 24));
     assert_eq!(session.pump().await.unwrap(), 0);
 }
+
+#[tokio::test]
+async fn pump_writes_terminal_protocol_responses_back_to_transport() {
+    let opts = SpawnOptions::default();
+    let transport = LoopbackTransport::new(&opts);
+    let mut session = Session::new(transport, Screen::new(80, 24));
+
+    session.send_input(b"\x1b[3;5H\x1b[6n").await.unwrap();
+    assert!(session.pump().await.unwrap() > 0);
+    // Loopback exposes the queued CPR response as the next read.
+    assert_eq!(session.pump().await.unwrap(), b"\x1b[3;5R".len());
+}
