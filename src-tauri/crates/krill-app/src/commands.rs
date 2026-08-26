@@ -6,7 +6,10 @@
 
 use krill_core::{validate_screen_size, Screen, SnapshotDto};
 use krill_session::{SessionHandle, SessionStatus};
-use krill_transport::local::{LoopbackTransport, ShellKind, SpawnOptions};
+#[cfg(not(windows))]
+use krill_transport::local::LoopbackTransport;
+use krill_transport::local::{ShellKind, SpawnOptions};
+use krill_transport::Transport;
 use serde::Serialize;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -107,9 +110,8 @@ impl SessionEntryClone {
 
 /// Spawn a new terminal session (one tab).
 ///
-/// M3 ships the loopback transport so the GUI pipeline works on every
-/// platform; the ConPTY wiring lands in the same command signature once the
-/// session-actor integration tests cover it on Windows CI.
+/// Windows hosts a real shell through ConPTY; other platforms fall back to
+/// the loopback transport until their PTY adapter lands.
 #[tauri::command]
 pub async fn session_create(
     registry: State<'_, SessionRegistry>,
@@ -117,25 +119,42 @@ pub async fn session_create(
     rows: u16,
 ) -> Result<SessionInfo, String> {
     validate_screen_size(cols, rows).map_err(|error| error.to_string())?;
-    let screen = Screen::try_new(cols, rows).map_err(|error| error.to_string())?;
-    // Loopback echoes input back, which exercises render + input round trip.
-    let transport = LoopbackTransport::new(&SpawnOptions {
+    let options = SpawnOptions {
         shell: ShellKind::Default,
         initial_cols: cols,
         initial_rows: rows,
-    });
+    };
+
+    #[cfg(windows)]
+    let (transport, shell_name) = {
+        use krill_transport::ConPtyTransport;
+        let transport = ConPtyTransport::spawn(&options)
+            .await
+            .map_err(|error| error.to_string())?;
+        (
+            Box::new(transport) as Box<dyn Transport>,
+            "conpty".to_string(),
+        )
+    };
+    #[cfg(not(windows))]
+    let (transport, shell_name) = (
+        Box::new(LoopbackTransport::new(&options)) as Box<dyn Transport>,
+        "loopback".to_string(),
+    );
+
+    let screen = Screen::try_new(cols, rows).map_err(|error| error.to_string())?;
     let handle = krill_session::spawn_session(transport, screen);
     let info = SessionInfo {
         id: 0,
         cols,
         rows,
-        shell: "loopback".into(),
+        shell: shell_name.clone(),
     };
     let id = registry.insert(SessionEntry {
         handle,
         cols,
         rows,
-        shell: "loopback".into(),
+        shell: shell_name,
     });
     Ok(SessionInfo { id, ..info })
 }

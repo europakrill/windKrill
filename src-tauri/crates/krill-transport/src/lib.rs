@@ -12,6 +12,9 @@ pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 pub mod local;
 
 #[cfg(windows)]
+pub use conpty::ConPtyTransport;
+
+#[cfg(windows)]
 mod conpty;
 
 #[derive(Debug, Error)]
@@ -38,5 +41,20 @@ pub trait Transport: Send + Sync {
     /// Close the transport and wait for its blocking backend teardown.
     fn close(&self) -> BoxFuture<'_, Result<(), TransportError>> {
         Box::pin(std::future::ready(Ok(())))
+    }
+}
+
+impl Transport for Box<dyn Transport> {
+    fn write<'a>(&'a self, data: &'a [u8]) -> BoxFuture<'a, Result<usize, TransportError>> {
+        (**self).write(data)
+    }
+    fn read<'a>(&'a self, buf: &'a mut [u8]) -> BoxFuture<'a, Result<usize, TransportError>> {
+        (**self).read(buf)
+    }
+    fn resize(&self, cols: u16, rows: u16) -> BoxFuture<'_, Result<(), TransportError>> {
+        (**self).resize(cols, rows)
+    }
+    fn close(&self) -> BoxFuture<'_, Result<(), TransportError>> {
+        (**self).close()
     }
 }
