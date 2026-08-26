@@ -120,6 +120,12 @@ async function newTab(): Promise<void> {
   tabs.push(tab);
   tabBar.appendChild(createTabEl(tab));
   activate(tab);
+  // Fit the grid to the actual pane once it has laid out, then push that
+  // size to the PTY so shell wrapping matches what is on screen.
+  requestAnimationFrame(() => {
+    const fit = tab.view.fitToPane();
+    if (fit) void bridge.resize(tab.id, fit.cols, fit.rows);
+  });
   // Focus keyboard input into the new tab.
   container.tabIndex = 0;
   container.focus();
@@ -168,7 +174,13 @@ document.addEventListener("keydown", (event) => {
 new ResizeObserver(() => {
   const tab = activeTab;
   if (!tab) return;
-  tab.view.measure();
+  const fit = tab.view.fitToPane();
+  if (fit) {
+    void bridge
+      .resize(tab.id, fit.cols, fit.rows)
+      .then(renderActive)
+      .catch(() => {});
+  }
 }).observe(paneHost);
 
 // Polling loop: refresh the active tab's screen. Push events arrive in M4.

@@ -47,6 +47,9 @@ export class CanvasTerminalView {
   private envelope: ScreenEnvelope | null = null;
   private charWidth = 9;
   private lineHeight = 18;
+  /** Grid size this view's session was created/last-resized with. */
+  gridCols = 80;
+  gridRows = 24;
 
   constructor(container: HTMLElement) {
     this.root = container;
@@ -64,6 +67,23 @@ export class CanvasTerminalView {
   setPalette(palette: Palette): void {
     this.palette = palette;
     if (this.envelope) this.render(this.envelope);
+  }
+
+  /**
+   * Compute the grid size that fills the pane and report it when it changes.
+   * The caller is responsible for resizing the session (which resizes the
+   * PTY); the renderer just needs the target to size its backing store.
+   */
+  fitToPane(): { cols: number; rows: number } | null {
+    const prev = { cols: this.gridCols, rows: this.gridRows };
+    const cols = Math.max(8, Math.floor(this.root.clientWidth / this.charWidth));
+    const rows = Math.max(2, Math.floor(this.root.clientHeight / this.lineHeight));
+    this.gridCols = cols;
+    this.gridRows = rows;
+    const changed = cols !== prev.cols || rows !== prev.rows;
+    // Backing store always tracks the pane so text stays crisp.
+    this.measure();
+    return changed ? { cols, rows } : null;
   }
 
   /** Measure the mono font and resize the backing store to fit the pane. */
