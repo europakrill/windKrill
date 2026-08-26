@@ -6,6 +6,7 @@ license = "Apache-2.0"
 description = "windKrill terminal screen buffer core: grid, logical blocks, folding, timestamps, scrollback with memory compression"
 
 [dependencies]
+serde = { version = "1", features = ["derive", "std"] }
 
 [dev-dependencies]
 insta = "1"
