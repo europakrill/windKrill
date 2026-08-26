@@ -7,12 +7,12 @@
 import "./style.css";
 import { applyTheme, THEMES } from "./theme";
 import { bridge, type ScreenEnvelope } from "./session";
-import { TerminalView } from "./renderer";
+import { CanvasTerminalView } from "./canvas";
 
 interface Tab {
   id: number;
   title: string;
-  view: TerminalView;
+  view: CanvasTerminalView;
   lastEnvelope: ScreenEnvelope | null;
 }
 
@@ -113,7 +113,7 @@ async function newTab(): Promise<void> {
   const tab: Tab = {
     id: info.id,
     title: `${info.shell} #${info.id}`,
-    view: new TerminalView(container),
+    view: new CanvasTerminalView(container),
     lastEnvelope: null,
   };
   tab.view.setPalette(THEMES[themeId]!.colors.palette);

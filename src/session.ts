@@ -13,9 +13,15 @@ export interface SessionInfo {
   shell: string;
 }
 
+/** M4 color: default | palette-indexed | truecolor RGB (lossless). */
+export type ColorDto =
+  | { t: "default" }
+  | { t: "indexed"; v: number }
+  | { t: "rgb"; v: [number, number, number] };
+
 export interface AttrDto {
-  fg: number;
-  bg: number;
+  fg: ColorDto;
+  bg: ColorDto;
   bold: boolean;
   italic: boolean;
   underline: boolean;
@@ -104,7 +110,7 @@ class EchoSimulator {
         runs: [{ attr: 0, text: text.padEnd(cols, " ").slice(0, cols) }],
       })),
       attrs: [
-        { fg: -1, bg: -1, bold: false, italic: false, underline: false, reverse: false },
+        { fg: { t: "default" }, bg: { t: "default" }, bold: false, italic: false, underline: false, reverse: false },
       ],
     };
     return { id, cols, rows, shell: "echo-sim", snapshot };

@@ -6,7 +6,7 @@
  * ligature/emoji shaping lands in M4.
  */
 
-import type { ScreenEnvelope, SnapshotDto } from "./session";
+import type { ScreenEnvelope, SnapshotDto, ColorDto } from "./session";
 
 export interface RendererMetrics {
   charWidth: number;
@@ -92,25 +92,29 @@ export class TerminalView {
 
   private styleSpan(
     span: HTMLElement,
-    attrs: { fg: number; bg: number; bold: boolean; italic: boolean; underline: boolean; reverse: boolean },
+    attrs: { fg: ColorDto; bg: ColorDto; bold: boolean; italic: boolean; underline: boolean; reverse: boolean },
   ): void {
     const fgColor = this.resolve(attrs.fg, "--kr-fg");
-    const bgColor = this.resolve(attrs.bg, "transparent");
+    const bgColor = this.resolve(attrs.bg, "");
     if (attrs.reverse) {
-      span.style.color = bgColor === "transparent" ? "var(--kr-bg)" : bgColor;
+      span.style.color = bgColor === "" ? "var(--kr-bg)" : bgColor;
       span.style.backgroundColor = fgColor;
     } else {
       span.style.color = fgColor;
-      if (attrs.bg >= 0) span.style.backgroundColor = bgColor;
+      if (attrs.bg.t !== "default") span.style.backgroundColor = bgColor;
     }
     if (attrs.bold) span.classList.add("kr-bold");
     if (attrs.italic) span.classList.add("kr-italic");
     if (attrs.underline) span.classList.add("kr-underline");
   }
 
-  private resolve(index: number, fallbackVar: string): string {
-    if (index < 0) return `var(${fallbackVar})`;
-    return this.palette[index] ?? `var(${fallbackVar})`;
+  private resolve(color: ColorDto, fallbackVar: string): string {
+    if (color.t === "default") return fallbackVar ? `var(${fallbackVar})` : "";
+    if (color.t === "rgb") {
+      const [r, g, b] = color.v;
+      return `rgb(${r},${g},${b})`;
+    }
+    return this.palette[color.v] ?? (fallbackVar ? `var(${fallbackVar})` : "");
   }
 
   private placeCursor(snapshot: SnapshotDto): void {

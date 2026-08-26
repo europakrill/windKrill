@@ -8,13 +8,44 @@
 use crate::{Cell, Color, Screen};
 use serde::Serialize;
 
+/// A resolved color in a snapshot attribute. `Default` means "use the theme
+/// default"; indexed colors reference the theme palette; RGB is truecolor,
+/// carried losslessly to the renderer (M4).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Default)]
+#[serde(tag = "t", content = "v", rename_all = "snake_case")]
+pub enum ColorDto {
+    #[default]
+    Default,
+    Indexed(#[serde(with = "serde_indexed")] u8),
+    Rgb([u8; 3]),
+}
+
+mod serde_indexed {
+    use serde::Serializer;
+    pub fn serialize<S: Serializer>(value: &u8, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_u16(u16::from(*value))
+    }
+}
+
+impl From<Color> for ColorDto {
+    fn from(color: Color) -> Self {
+        match color {
+            Color::Default => ColorDto::Default,
+            Color::Indexed(i) => ColorDto::Indexed(i),
+            // M4: truecolor now travels losslessly instead of folding onto
+            // the grayscale ramp.
+            Color::Rgb(r, g, b) => ColorDto::Rgb([r, g, b]),
+        }
+    }
+}
+
 /// One attribute combination used by at least one cell in this snapshot.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Default)]
 pub struct AttrDto {
-    /// Palette index or -1 for default foreground.
-    pub fg: i16,
-    /// Palette index or -1 for default background.
-    pub bg: i16,
+    /// Foreground color or Default.
+    pub fg: ColorDto,
+    /// Background color or Default.
+    pub bg: ColorDto,
     pub bold: bool,
     pub italic: bool,
     pub underline: bool,
@@ -72,8 +103,8 @@ impl From<Color> for i16 {
 
 fn attr_id(cache: &mut Vec<AttrDto>, attrs: &crate::Attrs) -> u32 {
     let dto = AttrDto {
-        fg: attrs.fg.map(i16::from).unwrap_or(-1),
-        bg: attrs.bg.map(i16::from).unwrap_or(-1),
+        fg: attrs.fg.map(ColorDto::from).unwrap_or_default(),
+        bg: attrs.bg.map(ColorDto::from).unwrap_or_default(),
         bold: attrs.bold,
         italic: attrs.italic,
         underline: attrs.underline,
@@ -132,19 +163,6 @@ impl SnapshotDto {
     }
 }
 
-impl Default for AttrDto {
-    fn default() -> Self {
-        Self {
-            fg: -1,
-            bg: -1,
-            bold: false,
-            italic: false,
-            underline: false,
-            reverse: false,
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -179,8 +197,24 @@ mod tests {
     }
 
     #[test]
-    fn color_mapping_defaults_to_minus_one() {
-        assert_eq!(i16::from(Color::Default), -1);
-        assert_eq!(i16::from(Color::Indexed(7)), 7);
+    fn color_mapping_preserves_indexed_and_truecolor() {
+        assert_eq!(ColorDto::from(Color::Default), ColorDto::Default);
+        assert_eq!(ColorDto::from(Color::Indexed(7)), ColorDto::Indexed(7));
+        // M4: truecolor is no longer folded onto the grayscale ramp.
+        assert_eq!(
+            ColorDto::from(Color::Rgb(0xff, 0x80, 0x01)),
+            ColorDto::Rgb([0xff, 0x80, 0x01])
+        );
+    }
+
+    #[test]
+    fn truecolor_snapshot_round_trips_rgb() {
+        let mut screen = Screen::new(10, 2);
+        // SGR truecolor foreground (38;2;r;g;b) then a glyph.
+        screen.sgr(&[38, 2, 18, 52, 86]);
+        screen.put('x');
+        let snap = SnapshotDto::from_screen(&screen);
+        let attr = &snap.attrs[snap.lines[0].runs[0].attr as usize];
+        assert_eq!(attr.fg, ColorDto::Rgb([18, 52, 86]));
     }
 }

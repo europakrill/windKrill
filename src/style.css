@@ -130,6 +130,12 @@ body,
   inset: 0;
 }
 
+.kr-canvas {
+  position: absolute;
+  inset: 0;
+  display: block;
+}
+
 .kr-line {
   position: absolute;
   left: 0;
