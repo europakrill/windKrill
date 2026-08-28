@@ -4,6 +4,10 @@ Fully open-source, pixel-faithful reimplementation of [WindTerm](https://github.
 functionality, fixing its known critical defects (crash-on-Ctrl+C, session-dialog freeze,
 ZModem filename mojibake, SFTP disconnects). **Windows-first**, other platforms later.
 
+windKrill is an independent community project. It is not affiliated with, endorsed by,
+or sponsored by WindTerm or kingToolbox. “WindTerm” is used only to identify the
+software whose observable behavior inspired this independent reimplementation.
+
 ## Stack (方案 A)
 
 | Layer | Choice | Why |
@@ -14,8 +18,9 @@ ZModem filename mojibake, SFTP disconnects). **Windows-first**, other platforms 
 | Screen model | `krill-core` (own) | folding / timestamps / command blocks / compressed scrollback are our differentiators |
 | Transport | `krill-transport` (ConPTY first, russh later) | trait-based so SSH/Telnet/Serial slot in behind one interface |
 
-Reused Apache-2.0 components from WindTerm's open-sourced `src/` are tracked in
-[docs/specs/windterm-reuse.md](docs/specs/windterm-reuse.md).
+Potential future Apache-2.0 reference points in WindTerm's open-sourced `src/`
+are tracked in [docs/specs/windterm-reuse.md](docs/specs/windterm-reuse.md).
+The current source tree contains no direct ports from WindTerm.
 
 ## Layout
 
@@ -55,4 +60,4 @@ on Linux CI/dev boxes use the workspace `default-members` subset.
 
 ## License
 
-Apache-2.0.
+Apache-2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE).

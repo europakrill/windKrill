@@ -34,8 +34,8 @@ fn bare_lf_keeps_column() {
 #[test]
 fn powershell_prompt_cursor_parks_after_prompt() {
     let mut s = Screen::new(80, 24);
-    feed(&mut s, b"PowerShell 7.5.0\r\n\r\nPS C:\\Users\\root> ");
-    assert_eq!(s.cursor(), ("PS C:\\Users\\root> ".len() as u16, 2));
+    feed(&mut s, b"PowerShell 7.5.0\r\n\r\nPS C:\\Users\\krill> ");
+    assert_eq!(s.cursor(), ("PS C:\\Users\\krill> ".len() as u16, 2));
 }
 
 /// Writing to the last column leaves the wrap-pending sentinel internally,

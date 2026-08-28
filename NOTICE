@@ -1,0 +1,16 @@
+windKrill
+Copyright 2026 windKrill contributors
+
+This product is licensed under the Apache License, Version 2.0.
+
+windKrill is an independent reimplementation inspired by the observable
+behavior of WindTerm. It is not affiliated with, endorsed by, or sponsored by
+WindTerm or kingToolbox.
+
+The current source tree contains no direct ports of WindTerm source files and
+no WindTerm binary assets. Potential future Apache-2.0 reference points and the
+attribution procedure for any future derived work are documented in
+`docs/specs/windterm-reuse.md`.
+
+Third-party dependencies retain their respective licenses and copyright
+notices.
